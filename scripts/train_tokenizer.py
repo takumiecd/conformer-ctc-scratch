@@ -13,23 +13,26 @@ def extract_texts(
     max_samples: int = None,
 ):
     """Extract transcriptions from ReazonSpeech dataset."""
-    print(f"Loading ReazonSpeech ({subset})...")
+    print(f"Loading ReazonSpeech ({subset}) in streaming mode...")
     dataset = load_dataset(
         "reazon-research/reazonspeech",
         subset,
         split="train",
+        streaming=True,  # Stream data to avoid loading audio
     )
     
     print(f"Extracting texts to {output_file}...")
+    count = 0
     with open(output_file, "w", encoding="utf-8") as f:
-        for i, sample in enumerate(tqdm(dataset)):
+        for i, sample in enumerate(tqdm(dataset, desc="Processing")):
             if max_samples and i >= max_samples:
                 break
             text = sample["transcription"]
             if text.strip():
                 f.write(text.strip() + "\n")
+                count += 1
                 
-    print(f"Extracted {i+1} transcriptions")
+    print(f"Extracted {count} transcriptions")
 
 
 def train_tokenizer(
