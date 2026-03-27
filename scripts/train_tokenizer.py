@@ -21,21 +21,40 @@ def extract_texts(
         streaming=True,
     )
     
-    # Remove audio column to avoid decoding
-    dataset = dataset.remove_columns(["audio"])
-    
     print(f"Extracting texts to {output_file}...")
     count = 0
+    errors = 0
+    
     with open(output_file, "w", encoding="utf-8") as f:
-        for i, sample in enumerate(tqdm(dataset, desc="Processing")):
+        iterator = iter(dataset)
+        i = 0
+        
+        while True:
             if max_samples and i >= max_samples:
                 break
-            text = sample["transcription"]
-            if text.strip():
-                f.write(text.strip() + "\n")
-                count += 1
                 
-    print(f"Extracted {count} transcriptions")
+            try:
+                sample = next(iterator)
+                text = sample["transcription"]
+                if text.strip():
+                    f.write(text.strip() + "\n")
+                    count += 1
+                i += 1
+                
+                # Progress
+                if i % 1000 == 0:
+                    print(f"Processed: {i}, Extracted: {count}, Errors: {errors}")
+                    
+            except StopIteration:
+                break
+            except Exception as e:
+                # Skip corrupted audio files
+                errors += 1
+                if errors % 100 == 0:
+                    print(f"Warning: Skipped {errors} corrupted files")
+                continue
+                
+    print(f"\nExtracted {count} transcriptions (skipped {errors} corrupted files)")
 
 
 def train_tokenizer(
