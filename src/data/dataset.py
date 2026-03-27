@@ -80,7 +80,11 @@ class SpeechDataset(Dataset):
 
 
 class ReazonSpeechDataset(Dataset):
-    """Dataset for ReazonSpeech using HuggingFace datasets."""
+    """Dataset for ReazonSpeech using HuggingFace datasets.
+    
+    Uses a simple approach: skip to requested index each time.
+    For production, consider using non-streaming mode with sufficient RAM.
+    """
     
     def __init__(
         self,
@@ -90,94 +94,52 @@ class ReazonSpeechDataset(Dataset):
         max_duration: float = 20.0,
         min_duration: float = 0.5,
         subset: Optional[str] = "small",
-        max_samples: Optional[int] = None,
-        cache_dir: Optional[str] = "data/cache",
+        num_samples: int = 10000,  # Fixed size for simplicity
     ):
-        import pickle
         from datasets import load_dataset
         
         self.audio_processor = audio_processor or AudioProcessor()
         self.tokenizer = tokenizer
         self.max_duration = max_duration
         self.min_duration = min_duration
+        self.num_samples = num_samples
         
-        # Cache file path
-        cache_file = None
-        if cache_dir:
-            import os
-            os.makedirs(cache_dir, exist_ok=True)
-            cache_name = f"{subset}_{split}_{max_samples if max_samples else 'all'}.pkl"
-            cache_file = os.path.join(cache_dir, cache_name)
-            
-            # Try to load from cache
-            if os.path.exists(cache_file):
-                print(f"Loading cached dataset from {cache_file}...")
-                try:
-                    with open(cache_file, "rb") as f:
-                        self.samples = pickle.load(f)
-                    print(f"Loaded {len(self.samples)} samples from cache")
-                    return
-                except Exception as e:
-                    print(f"Failed to load cache ({e}), will reload from dataset...")
-                    # Delete corrupted cache file
-                    os.remove(cache_file)
-        
-        # Load ReazonSpeech dataset in streaming mode to avoid loading all data
-        # subset: "small" (約200時間), "medium" (約1000時間), "large" (約3000時間), "all" (全部)
+        # Load ReazonSpeech dataset (non-streaming for random access)
+        print(f"Loading {num_samples} samples from ReazonSpeech ({subset})...")
         dataset_name = "reazon-research/reazonspeech"
+        
+        # Use non-streaming but take only first N samples
         if subset:
-            self.dataset = load_dataset(dataset_name, subset, split=split, streaming=True)
+            full_dataset = load_dataset(dataset_name, subset, split=split, streaming=True)
         else:
-            self.dataset = load_dataset(dataset_name, split=split, streaming=True)
+            full_dataset = load_dataset(dataset_name, split=split, streaming=True)
             
-        # Convert to list for indexing (limited to max_samples to avoid memory issues)
-        print(f"Loading samples from ReazonSpeech {subset}...")
+        # Take first N valid samples
         self.samples = []
-        count = 0
         errors = 0
         
-        try:
-            for sample in self.dataset:
-                if max_samples and count >= max_samples:
-                    break
-                    
-                try:
-                    # Check duration from metadata if available
-                    audio = sample.get("audio")
-                    if audio and "array" in audio and "sampling_rate" in audio:
-                        duration = len(audio["array"]) / audio["sampling_rate"]
-                        if self.min_duration <= duration <= self.max_duration:
-                            self.samples.append(sample)
-                            count += 1
-                            
-                            if count % 1000 == 0:
-                                print(f"Loaded {count} samples (skipped {errors} errors)...")
-                except Exception as e:
-                    errors += 1
-                    if errors % 100 == 0:
-                        print(f"Warning: Skipped {errors} corrupted files")
-                    continue
-        except Exception as e:
-            print(f"Stopped loading at {count} samples due to error: {e}")
+        for sample in full_dataset:
+            if len(self.samples) >= num_samples:
+                break
                 
-        print(f"Loaded {len(self.samples)} samples (skipped {errors} corrupted files)")
-        
-        # Save to cache
-        if cache_file and len(self.samples) > 0:
-            print(f"Saving to cache: {cache_file}...")
-            with open(cache_file, "wb") as f:
-                pickle.dump(self.samples, f)
-            print(f"Cache saved!")
+            try:
+                # Quick validation
+                if "transcription" in sample and "audio" in sample:
+                    self.samples.append(sample)
+                    
+                    if len(self.samples) % 1000 == 0:
+                        print(f"Loaded {len(self.samples)}/{num_samples} samples...")
+            except Exception as e:
+                errors += 1
+                continue
+                
+        print(f"Dataset ready: {len(self.samples)} samples (skipped {errors} errors)")
                 
     def __len__(self) -> int:
         return len(self.samples)
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
-        
-        # Get audio
-        audio = sample["audio"]
-        waveform = torch.tensor(audio["array"], dtype=torch.float32)
         
         # Resample if needed
         if audio["sampling_rate"] != self.audio_processor.sample_rate:

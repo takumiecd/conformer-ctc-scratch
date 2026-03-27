@@ -65,6 +65,8 @@ def main():
     
     # Datasets
     print(f"Loading ReazonSpeech ({args.subset})...")
+    num_train_samples = args.max_samples if args.max_samples else 10000
+    
     train_dataset = ReazonSpeechDataset(
         split="train",
         audio_processor=audio_processor,
@@ -72,12 +74,11 @@ def main():
         max_duration=config.data.max_duration,
         min_duration=config.data.min_duration,
         subset=args.subset,
-        max_samples=args.max_samples,
+        num_samples=num_train_samples,
     )
-    print(f"Train samples: {len(train_dataset)}")
     
-    # Create validation split (use subset of training data)
-    val_size = max(100, len(train_dataset) // 20)
+    # Create validation split (use last 10%)
+    val_size = max(100, len(train_dataset) // 10)
     val_dataset_samples = train_dataset.samples[-val_size:]
     train_dataset.samples = train_dataset.samples[:-val_size]
     
