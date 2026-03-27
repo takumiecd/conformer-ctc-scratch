@@ -1,0 +1,41 @@
+# Tiny Model Configuration (~10M params)
+
+model:
+  encoder_dim: 144
+  num_encoder_layers: 8
+  num_attention_heads: 4
+  feed_forward_expansion: 4
+  conv_kernel_size: 31
+  dropout: 0.1
+  input_dim: 80  # mel spectrogram bins
+  
+audio:
+  sample_rate: 16000
+  n_mels: 80
+  n_fft: 400
+  hop_length: 160
+  win_length: 400
+
+tokenizer:
+  vocab_size: 5000
+  model_path: "tokenizer/tokenizer.model"
+
+training:
+  batch_size: 32
+  max_epochs: 100
+  learning_rate: 0.001
+  warmup_steps: 10000
+  gradient_clip: 5.0
+  accumulate_grad_batches: 1
+  
+data:
+  train_manifest: "data/train.json"
+  val_manifest: "data/val.json"
+  test_manifest: "data/test.json"
+  max_duration: 20.0
+  min_duration: 0.5
+
+checkpoint:
+  save_dir: "checkpoints"
+  save_top_k: 3
+  monitor: "val_wer"
