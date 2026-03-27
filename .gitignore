@@ -67,8 +67,8 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Data and models
-data/
+# Data and models (only top-level data folder)
+/data/
 *.pt
 *.pth
 *.ckpt
