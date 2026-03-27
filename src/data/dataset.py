@@ -91,13 +91,31 @@ class ReazonSpeechDataset(Dataset):
         min_duration: float = 0.5,
         subset: Optional[str] = "small",
         max_samples: Optional[int] = None,
+        cache_dir: Optional[str] = "data/cache",
     ):
+        import pickle
         from datasets import load_dataset
         
         self.audio_processor = audio_processor or AudioProcessor()
         self.tokenizer = tokenizer
         self.max_duration = max_duration
         self.min_duration = min_duration
+        
+        # Cache file path
+        cache_file = None
+        if cache_dir:
+            import os
+            os.makedirs(cache_dir, exist_ok=True)
+            cache_name = f"{subset}_{split}_{max_samples if max_samples else 'all'}.pkl"
+            cache_file = os.path.join(cache_dir, cache_name)
+            
+            # Try to load from cache
+            if os.path.exists(cache_file):
+                print(f"Loading cached dataset from {cache_file}...")
+                with open(cache_file, "rb") as f:
+                    self.samples = pickle.load(f)
+                print(f"Loaded {len(self.samples)} samples from cache")
+                return
         
         # Load ReazonSpeech dataset in streaming mode to avoid loading all data
         # subset: "small" (約200時間), "medium" (約1000時間), "large" (約3000時間), "all" (全部)
@@ -138,6 +156,13 @@ class ReazonSpeechDataset(Dataset):
             print(f"Stopped loading at {count} samples due to error: {e}")
                 
         print(f"Loaded {len(self.samples)} samples (skipped {errors} corrupted files)")
+        
+        # Save to cache
+        if cache_file and len(self.samples) > 0:
+            print(f"Saving to cache: {cache_file}...")
+            with open(cache_file, "wb") as f:
+                pickle.dump(self.samples, f)
+            print(f"Cache saved!")
                 
     def __len__(self) -> int:
         return len(self.samples)
