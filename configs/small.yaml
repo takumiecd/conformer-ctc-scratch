@@ -2,7 +2,7 @@
 
 model:
   encoder_dim: 256
-  num_encoder_layers: 12
+  num_encoder_layers: 16
   num_attention_heads: 4
   feed_forward_expansion: 4
   conv_kernel_size: 31

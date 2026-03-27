@@ -44,9 +44,9 @@ python scripts/inference.py --checkpoint checkpoints/best.pt --audio test.wav
 
 | モデル | パラメータ | encoder_dim | layers |
 |--------|-----------|-------------|--------|
-| Tiny   | ~10M      | 144         | 8      |
-| Small  | ~30M      | 256         | 12     |
-| Medium | ~50M      | 384         | 16     |
+| Tiny   | ~10M      | 176         | 12     |
+| Small  | ~30M      | 256         | 16     |
+| Medium | ~50M      | 320         | 18     |
 
 ## ライセンス
 

@@ -1,8 +1,8 @@
 # Medium Model Configuration (~50M params)
 
 model:
-  encoder_dim: 384
-  num_encoder_layers: 16
+  encoder_dim: 320
+  num_encoder_layers: 18
   num_attention_heads: 8
   feed_forward_expansion: 4
   conv_kernel_size: 31

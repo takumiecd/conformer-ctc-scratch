@@ -1,8 +1,8 @@
 # Tiny Model Configuration (~10M params)
 
 model:
-  encoder_dim: 144
-  num_encoder_layers: 8
+  encoder_dim: 176
+  num_encoder_layers: 12
   num_attention_heads: 4
   feed_forward_expansion: 4
   conv_kernel_size: 31
