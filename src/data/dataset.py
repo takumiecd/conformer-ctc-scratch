@@ -112,10 +112,15 @@ class ReazonSpeechDataset(Dataset):
             # Try to load from cache
             if os.path.exists(cache_file):
                 print(f"Loading cached dataset from {cache_file}...")
-                with open(cache_file, "rb") as f:
-                    self.samples = pickle.load(f)
-                print(f"Loaded {len(self.samples)} samples from cache")
-                return
+                try:
+                    with open(cache_file, "rb") as f:
+                        self.samples = pickle.load(f)
+                    print(f"Loaded {len(self.samples)} samples from cache")
+                    return
+                except Exception as e:
+                    print(f"Failed to load cache ({e}), will reload from dataset...")
+                    # Delete corrupted cache file
+                    os.remove(cache_file)
         
         # Load ReazonSpeech dataset in streaming mode to avoid loading all data
         # subset: "small" (約200時間), "medium" (約1000時間), "large" (約3000時間), "all" (全部)
