@@ -113,24 +113,29 @@ class ReazonSpeechDataset(Dataset):
         count = 0
         errors = 0
         
-        for sample in self.dataset:
-            if max_samples and count >= max_samples:
-                break
-                
-            try:
-                # Check duration from metadata if available
-                audio = sample.get("audio")
-                if audio and "array" in audio and "sampling_rate" in audio:
-                    duration = len(audio["array"]) / audio["sampling_rate"]
-                    if self.min_duration <= duration <= self.max_duration:
-                        self.samples.append(sample)
-                        count += 1
-                        
-                        if count % 1000 == 0:
-                            print(f"Loaded {count} samples (skipped {errors} errors)...")
-            except Exception as e:
-                errors += 1
-                continue
+        try:
+            for sample in self.dataset:
+                if max_samples and count >= max_samples:
+                    break
+                    
+                try:
+                    # Check duration from metadata if available
+                    audio = sample.get("audio")
+                    if audio and "array" in audio and "sampling_rate" in audio:
+                        duration = len(audio["array"]) / audio["sampling_rate"]
+                        if self.min_duration <= duration <= self.max_duration:
+                            self.samples.append(sample)
+                            count += 1
+                            
+                            if count % 1000 == 0:
+                                print(f"Loaded {count} samples (skipped {errors} errors)...")
+                except Exception as e:
+                    errors += 1
+                    if errors % 100 == 0:
+                        print(f"Warning: Skipped {errors} corrupted files")
+                    continue
+        except Exception as e:
+            print(f"Stopped loading at {count} samples due to error: {e}")
                 
         print(f"Loaded {len(self.samples)} samples (skipped {errors} corrupted files)")
                 
