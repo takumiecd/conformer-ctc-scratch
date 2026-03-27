@@ -168,7 +168,6 @@ class ReazonSpeechDataset(Dataset):
             "label_length": labels.size(0),
             "text": text,
         }
-        }
 
 
 def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
