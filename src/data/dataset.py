@@ -141,6 +141,10 @@ class ReazonSpeechDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
         
+        # Get audio
+        audio = sample["audio"]
+        waveform = torch.tensor(audio["array"], dtype=torch.float32)
+        
         # Resample if needed
         if audio["sampling_rate"] != self.audio_processor.sample_rate:
             import torchaudio.transforms as T
@@ -163,6 +167,7 @@ class ReazonSpeechDataset(Dataset):
             "input_length": features.size(0),
             "label_length": labels.size(0),
             "text": text,
+        }
         }
 
 
