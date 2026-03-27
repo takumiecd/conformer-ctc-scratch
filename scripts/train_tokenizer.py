@@ -18,8 +18,11 @@ def extract_texts(
         "reazon-research/reazonspeech",
         subset,
         split="train",
-        streaming=True,  # Stream data to avoid loading audio
+        streaming=True,
     )
+    
+    # Remove audio column to avoid decoding
+    dataset = dataset.remove_columns(["audio"])
     
     print(f"Extracting texts to {output_file}...")
     count = 0
