@@ -37,8 +37,8 @@ def main():
         help="ReazonSpeech subset"
     )
     parser.add_argument(
-        "--num_workers", type=int, default=4,
-        help="Number of dataloader workers"
+        "--num_workers", type=int, default=0,
+        help="Number of dataloader workers (use 0 for Jupyter/Kubernetes to avoid shared memory issues)"
     )
     parser.add_argument(
         "--max_samples", type=int, default=None,
