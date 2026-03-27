@@ -90,6 +90,7 @@ class ReazonSpeechDataset(Dataset):
         max_duration: float = 20.0,
         min_duration: float = 0.5,
         subset: Optional[str] = "small",
+        max_samples: Optional[int] = None,
     ):
         from datasets import load_dataset
         
@@ -98,27 +99,46 @@ class ReazonSpeechDataset(Dataset):
         self.max_duration = max_duration
         self.min_duration = min_duration
         
-        # Load ReazonSpeech dataset
+        # Load ReazonSpeech dataset in streaming mode to avoid loading all data
         # subset: "small" (約200時間), "medium" (約1000時間), "large" (約3000時間), "all" (全部)
         dataset_name = "reazon-research/reazonspeech"
         if subset:
-            self.dataset = load_dataset(dataset_name, subset, split=split)
+            self.dataset = load_dataset(dataset_name, subset, split=split, streaming=True)
         else:
-            self.dataset = load_dataset(dataset_name, split=split)
+            self.dataset = load_dataset(dataset_name, split=split, streaming=True)
             
-        # Filter by duration
-        self.indices = []
-        for i, sample in enumerate(self.dataset):
-            audio = sample["audio"]
-            duration = len(audio["array"]) / audio["sampling_rate"]
-            if self.min_duration <= duration <= self.max_duration:
-                self.indices.append(i)
+        # Convert to list for indexing (limited to max_samples to avoid memory issues)
+        print(f"Loading samples from ReazonSpeech {subset}...")
+        self.samples = []
+        count = 0
+        errors = 0
+        
+        for sample in self.dataset:
+            if max_samples and count >= max_samples:
+                break
+                
+            try:
+                # Check duration from metadata if available
+                audio = sample.get("audio")
+                if audio and "array" in audio and "sampling_rate" in audio:
+                    duration = len(audio["array"]) / audio["sampling_rate"]
+                    if self.min_duration <= duration <= self.max_duration:
+                        self.samples.append(sample)
+                        count += 1
+                        
+                        if count % 1000 == 0:
+                            print(f"Loaded {count} samples (skipped {errors} errors)...")
+            except Exception as e:
+                errors += 1
+                continue
+                
+        print(f"Loaded {len(self.samples)} samples (skipped {errors} corrupted files)")
                 
     def __len__(self) -> int:
-        return len(self.indices)
+        return len(self.samples)
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        sample = self.dataset[self.indices[idx]]
+        sample = self.samples[idx]
         
         # Get audio
         audio = sample["audio"]

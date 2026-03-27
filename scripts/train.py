@@ -40,6 +40,10 @@ def main():
         "--num_workers", type=int, default=4,
         help="Number of dataloader workers"
     )
+    parser.add_argument(
+        "--max_samples", type=int, default=None,
+        help="Maximum number of samples to use (for testing)"
+    )
     args = parser.parse_args()
     
     # Load config
@@ -68,22 +72,24 @@ def main():
         max_duration=config.data.max_duration,
         min_duration=config.data.min_duration,
         subset=args.subset,
+        max_samples=args.max_samples,
     )
     print(f"Train samples: {len(train_dataset)}")
     
     # Create validation split (use subset of training data)
-    val_dataset = ReazonSpeechDataset(
-        split="train",
-        audio_processor=audio_processor,
-        tokenizer=tokenizer,
-        max_duration=config.data.max_duration,
-        min_duration=config.data.min_duration,
-        subset=args.subset,
-    )
-    # Use last 5% for validation
-    val_size = max(100, len(val_dataset) // 20)
-    val_dataset.indices = val_dataset.indices[-val_size:]
-    train_dataset.indices = train_dataset.indices[:-val_size]
+    val_size = max(100, len(train_dataset) // 20)
+    val_dataset_samples = train_dataset.samples[-val_size:]
+    train_dataset.samples = train_dataset.samples[:-val_size]
+    
+    # Create val dataset with same config
+    val_dataset = ReazonSpeechDataset.__new__(ReazonSpeechDataset)
+    val_dataset.audio_processor = audio_processor
+    val_dataset.tokenizer = tokenizer
+    val_dataset.max_duration = config.data.max_duration
+    val_dataset.min_duration = config.data.min_duration
+    val_dataset.samples = val_dataset_samples
+    
+    print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
     print(f"Val samples: {len(val_dataset)}")
     
     # DataLoaders
