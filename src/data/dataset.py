@@ -102,9 +102,9 @@ class ReazonSpeechDataset(Dataset):
         # subset: "small" (約200時間), "medium" (約1000時間), "large" (約3000時間), "all" (全部)
         dataset_name = "reazon-research/reazonspeech"
         if subset:
-            self.dataset = load_dataset(dataset_name, subset, split=split, trust_remote_code=True)
+            self.dataset = load_dataset(dataset_name, subset, split=split)
         else:
-            self.dataset = load_dataset(dataset_name, split=split, trust_remote_code=True)
+            self.dataset = load_dataset(dataset_name, split=split)
             
         # Filter by duration
         self.indices = []

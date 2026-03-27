@@ -18,7 +18,6 @@ def extract_texts(
         "reazon-research/reazonspeech",
         subset,
         split="train",
-        trust_remote_code=True,
     )
     
     print(f"Extracting texts to {output_file}...")

@@ -22,7 +22,6 @@ def prepare_reazon_speech(
         "reazon-research/reazonspeech",
         subset,
         split="train",
-        trust_remote_code=True,
     )
     
     os.makedirs(output_dir, exist_ok=True)
