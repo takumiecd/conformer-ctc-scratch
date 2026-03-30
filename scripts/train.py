@@ -9,10 +9,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import torch
-from datasets import load_dataset
 
 from src.model import ConformerCTC
-from src.data import AudioProcessor, Tokenizer, collate_fn, ReazonSpeechDataset
+from src.data import AudioProcessor, SpeechDataset, Tokenizer, collate_fn
 from src.training import Trainer
 from src.utils import load_config
 
@@ -32,9 +31,12 @@ def main():
         help="Path to checkpoint to resume from"
     )
     parser.add_argument(
-        "--subset", type=str, default="small",
-        choices=["small", "medium", "large", "all"],
-        help="ReazonSpeech subset"
+        "--train_manifest", type=str, default=None,
+        help="Path to train manifest (overrides config.data.train_manifest)"
+    )
+    parser.add_argument(
+        "--val_manifest", type=str, default=None,
+        help="Path to validation manifest (overrides config.data.val_manifest)"
     )
     parser.add_argument(
         "--num_workers", type=int, default=0,
@@ -42,7 +44,11 @@ def main():
     )
     parser.add_argument(
         "--max_samples", type=int, default=None,
-        help="Maximum number of samples to use (for testing)"
+        help="Maximum number of samples per split to use (for testing)"
+    )
+    parser.add_argument(
+        "--cache_audio", action="store_true",
+        help="Cache extracted features in the dataset process"
     )
     args = parser.parse_args()
     
@@ -62,36 +68,33 @@ def main():
     
     # Audio processor
     audio_processor = AudioProcessor.from_config(config)
-    
-    # Datasets
-    print(f"Loading ReazonSpeech ({args.subset})...")
-    num_train_samples = args.max_samples if args.max_samples else 10000
-    
-    train_dataset = ReazonSpeechDataset(
-        split="train",
+
+    train_manifest = args.train_manifest or config.data.train_manifest
+    val_manifest = args.val_manifest or config.data.val_manifest
+
+    print(f"Loading train manifest: {train_manifest}")
+    train_dataset = SpeechDataset(
+        manifest_path=train_manifest,
         audio_processor=audio_processor,
         tokenizer=tokenizer,
         max_duration=config.data.max_duration,
         min_duration=config.data.min_duration,
-        subset=args.subset,
-        num_samples=num_train_samples,
+        cache_audio=args.cache_audio,
+        max_samples=args.max_samples,
     )
-    
-    # Create validation split (use last 10%)
-    val_size = max(100, len(train_dataset) // 10)
-    val_dataset_samples = train_dataset.samples[-val_size:]
-    train_dataset.samples = train_dataset.samples[:-val_size]
-    
-    # Create val dataset with same config
-    val_dataset = ReazonSpeechDataset.__new__(ReazonSpeechDataset)
-    val_dataset.audio_processor = audio_processor
-    val_dataset.tokenizer = tokenizer
-    val_dataset.max_duration = config.data.max_duration
-    val_dataset.min_duration = config.data.min_duration
-    val_dataset.samples = val_dataset_samples
-    
+
+    print(f"Loading validation manifest: {val_manifest}")
+    val_dataset = SpeechDataset(
+        manifest_path=val_manifest,
+        audio_processor=audio_processor,
+        tokenizer=tokenizer,
+        max_duration=config.data.max_duration,
+        min_duration=config.data.min_duration,
+        cache_audio=args.cache_audio,
+        max_samples=args.max_samples,
+    )
+
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
-    print(f"Val samples: {len(val_dataset)}")
     
     # DataLoaders
     train_loader = torch.utils.data.DataLoader(

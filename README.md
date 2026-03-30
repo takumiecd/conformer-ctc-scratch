@@ -13,9 +13,10 @@
 1. [環境構築](#環境構築)
 2. [Hugging Face認証](#hugging-face認証)
 3. [トークナイザー学習](#トークナイザー学習)
-4. [モデル学習](#モデル学習)
-5. [推論](#推論)
-6. [モデルアーキテクチャ](#モデルアーキテクチャ)
+4. [学習データ準備](#学習データ準備)
+5. [モデル学習](#モデル学習)
+6. [推論](#推論)
+7. [モデルアーキテクチャ](#モデルアーキテクチャ)
 
 ---
 
@@ -128,19 +129,59 @@ tokenizer/
 
 ---
 
+## 学習データ準備
+
+学習本線は manifest ベースです。先に ReazonSpeech からローカル音声と manifest を作成します。
+
+```bash
+# Small subset をローカル corpus に変換
+python scripts/prepare_data.py --subset small --output_dir data
+```
+
+生成物:
+
+```
+data/
+├── train.json
+├── val.json
+├── test.json
+├── info.json
+└── audio/
+    ├── train/
+    ├── val/
+    └── test/
+```
+
+### オプション
+
+| オプション | デフォルト | 説明 |
+|-----------|-----------|------|
+| `--subset` | small | ReazonSpeech subset |
+| `--output_dir` | data | manifest と音声の出力先 |
+| `--val_ratio` | 0.05 | validation 割合 |
+| `--test_ratio` | 0.05 | test 割合 |
+| `--min_duration` | 0.5 | 最短音声長 |
+| `--max_duration` | 20.0 | 最長音声長 |
+| `--max_samples` | None | 書き出すサンプル上限 |
+| `--audio_format` | flac | 保存形式 (`flac` / `wav`) |
+
+---
+
 ## モデル学習
 
 ### 基本的な学習
 
 ```bash
+# 先に data/train.json, data/val.json を用意しておく
+
 # Tinyモデル（パイプライン検証用）
-python scripts/train.py --config configs/tiny.yaml --subset small
+python scripts/train.py --config configs/tiny.yaml
 
 # Smallモデル（本格学習）
-python scripts/train.py --config configs/small.yaml --subset medium
+python scripts/train.py --config configs/small.yaml
 
 # Mediumモデル（性能重視）
-python scripts/train.py --config configs/medium.yaml --subset large
+python scripts/train.py --config configs/medium.yaml
 ```
 
 ### オプション
@@ -149,14 +190,17 @@ python scripts/train.py --config configs/medium.yaml --subset large
 |-----------|-----------|------|
 | `--config` | 必須 | 設定ファイルパス |
 | `--tokenizer` | tokenizer/tokenizer.model | トークナイザーパス |
-| `--subset` | small | データセットサイズ |
 | `--resume` | None | チェックポイントから再開 |
-| `--num_workers` | 4 | DataLoaderワーカー数 |
+| `--train_manifest` | config依存 | train manifest を上書き |
+| `--val_manifest` | config依存 | val manifest を上書き |
+| `--num_workers` | 0 | DataLoaderワーカー数 |
+| `--max_samples` | None | 各 split のサンプル数上限 |
+| `--cache_audio` | False | dataset プロセス内で特徴量をキャッシュ |
 
 ### 学習の再開
 
 ```bash
-python scripts/train.py --config configs/tiny.yaml --subset small --resume checkpoints/latest.pt
+python scripts/train.py --config configs/tiny.yaml --resume checkpoints/latest.pt
 ```
 
 ### 出力

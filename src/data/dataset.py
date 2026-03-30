@@ -1,23 +1,26 @@
-"""Dataset and DataLoader for Speech Recognition"""
+"""Dataset and DataLoader for speech recognition."""
 
 import json
 import os
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional
+
 import torch
-from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader, Dataset
 
 from .audio import AudioProcessor
 from .tokenizer import Tokenizer
 
 
 class SpeechDataset(Dataset):
-    """Speech dataset for training and evaluation.
-    
-    Manifest format (JSON lines):
-        {"audio_path": "path/to/audio.wav", "text": "transcription", "duration": 5.2}
+    """Speech dataset backed by a JSON-lines manifest.
+
+    Manifest format:
+        {"id": "utt-0001", "audio_filepath": "/abs/path/audio.flac", "text": "...", "duration": 5.2}
+
+    `audio_path` is also accepted for backward compatibility.
     """
-    
+
     def __init__(
         self,
         manifest_path: str,
@@ -26,147 +29,88 @@ class SpeechDataset(Dataset):
         max_duration: float = 20.0,
         min_duration: float = 0.5,
         cache_audio: bool = False,
+        max_samples: Optional[int] = None,
     ):
+        self.manifest_path = manifest_path
         self.audio_processor = audio_processor
         self.tokenizer = tokenizer
         self.max_duration = max_duration
         self.min_duration = min_duration
         self.cache_audio = cache_audio
-        self.cache = {}
-        
-        # Load manifest
+        self.max_samples = max_samples
+        self.cache: Dict[str, torch.Tensor] = {}
+
         self.samples = self._load_manifest(manifest_path)
-        
+
+    def _resolve_audio_path(self, manifest_dir: str, sample: Dict[str, Any], line_no: int) -> str:
+        audio_path = sample.get("audio_filepath") or sample.get("audio_path")
+        if not audio_path:
+            raise ValueError(
+                f"Manifest entry at line {line_no} is missing 'audio_filepath' (or legacy 'audio_path')."
+            )
+
+        if not os.path.isabs(audio_path):
+            audio_path = os.path.join(manifest_dir, audio_path)
+
+        return os.path.abspath(os.path.expanduser(audio_path))
+
     def _load_manifest(self, manifest_path: str) -> List[Dict[str, Any]]:
-        """Load manifest file."""
-        samples = []
-        
+        """Load and validate manifest entries."""
+        manifest_dir = os.path.dirname(os.path.abspath(manifest_path))
+        samples: List[Dict[str, Any]] = []
+
         with open(manifest_path, "r", encoding="utf-8") as f:
-            for line in f:
-                sample = json.loads(line.strip())
-                duration = sample.get("duration", float("inf"))
-                
-                # Filter by duration
-                if self.min_duration <= duration <= self.max_duration:
-                    samples.append(sample)
-                    
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+
+                sample = json.loads(line)
+                duration = float(sample.get("duration", float("inf")))
+                text = str(sample.get("text", "")).strip()
+
+                if not text:
+                    continue
+                if not self.min_duration <= duration <= self.max_duration:
+                    continue
+
+                normalized = {
+                    "id": sample.get("id", f"{os.path.basename(manifest_path)}:{line_no}"),
+                    "audio_filepath": self._resolve_audio_path(manifest_dir, sample, line_no),
+                    "text": text,
+                    "duration": duration,
+                }
+                samples.append(normalized)
+
+                if self.max_samples is not None and len(samples) >= self.max_samples:
+                    break
+
         return samples
-    
+
     def __len__(self) -> int:
         return len(self.samples)
-    
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.samples[idx]
-        audio_path = sample["audio_path"]
+        audio_path = sample["audio_filepath"]
         text = sample["text"]
-        
-        # Load and process audio
+
         if self.cache_audio and audio_path in self.cache:
             features = self.cache[audio_path]
         else:
             features = self.audio_processor.process_file(audio_path)
             if self.cache_audio:
                 self.cache[audio_path] = features
-                
-        # Encode text
+
         labels = torch.tensor(self.tokenizer.encode(text), dtype=torch.long)
-        
-        return {
-            "features": features,
-            "labels": labels,
-            "input_length": features.size(0),
-            "label_length": labels.size(0),
-        }
 
-
-class ReazonSpeechDataset(Dataset):
-    """Dataset for ReazonSpeech using HuggingFace datasets.
-    
-    Uses a simple approach: skip to requested index each time.
-    For production, consider using non-streaming mode with sufficient RAM.
-    """
-    
-    def __init__(
-        self,
-        split: str = "train",
-        audio_processor: Optional[AudioProcessor] = None,
-        tokenizer: Optional[Tokenizer] = None,
-        max_duration: float = 20.0,
-        min_duration: float = 0.5,
-        subset: Optional[str] = "small",
-        num_samples: int = 10000,  # Fixed size for simplicity
-    ):
-        from datasets import load_dataset
-        
-        self.audio_processor = audio_processor or AudioProcessor()
-        self.tokenizer = tokenizer
-        self.max_duration = max_duration
-        self.min_duration = min_duration
-        self.num_samples = num_samples
-        
-        # Load ReazonSpeech dataset (non-streaming for random access)
-        print(f"Loading {num_samples} samples from ReazonSpeech ({subset})...")
-        dataset_name = "reazon-research/reazonspeech"
-        
-        # Use non-streaming but take only first N samples
-        if subset:
-            full_dataset = load_dataset(dataset_name, subset, split=split, streaming=True)
-        else:
-            full_dataset = load_dataset(dataset_name, split=split, streaming=True)
-            
-        # Take first N valid samples
-        self.samples = []
-        errors = 0
-        
-        for sample in full_dataset:
-            if len(self.samples) >= num_samples:
-                break
-                
-            try:
-                # Quick validation
-                if "transcription" in sample and "audio" in sample:
-                    self.samples.append(sample)
-                    
-                    if len(self.samples) % 1000 == 0:
-                        print(f"Loaded {len(self.samples)}/{num_samples} samples...")
-            except Exception as e:
-                errors += 1
-                continue
-                
-        print(f"Dataset ready: {len(self.samples)} samples (skipped {errors} errors)")
-                
-    def __len__(self) -> int:
-        return len(self.samples)
-    
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        sample = self.samples[idx]
-        
-        # Get audio
-        audio = sample["audio"]
-        waveform = torch.tensor(audio["array"], dtype=torch.float32)
-        
-        # Resample if needed
-        if audio["sampling_rate"] != self.audio_processor.sample_rate:
-            import torchaudio.transforms as T
-            resampler = T.Resample(audio["sampling_rate"], self.audio_processor.sample_rate)
-            waveform = resampler(waveform.unsqueeze(0)).squeeze(0)
-            
-        # Extract features
-        features = self.audio_processor.extract_features(waveform)
-        
-        # Get text and encode
-        text = sample["transcription"]
-        if self.tokenizer is not None:
-            labels = torch.tensor(self.tokenizer.encode(text), dtype=torch.long)
-        else:
-            labels = torch.tensor([], dtype=torch.long)
-            
         return {
             "features": features,
             "labels": labels,
             "input_length": features.size(0),
             "label_length": labels.size(0),
             "text": text,
+            "id": sample["id"],
         }
 
 
@@ -198,13 +142,20 @@ def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     max_len = features_padded.size(1)
     mask = torch.arange(max_len).unsqueeze(0) < input_lengths.unsqueeze(1)
     
-    return {
+    collated = {
         "features": features_padded,
         "labels": labels_padded,
         "input_lengths": input_lengths,
         "label_lengths": label_lengths,
         "mask": mask,
     }
+
+    if "text" in batch[0]:
+        collated["texts"] = [x["text"] for x in batch]
+    if "id" in batch[0]:
+        collated["ids"] = [x["id"] for x in batch]
+
+    return collated
 
 
 def create_dataloader(

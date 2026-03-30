@@ -1,14 +1,14 @@
 """Tests for data processing."""
 
+import json
 import pytest
 import torch
-import numpy as np
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.data import AudioProcessor, Tokenizer, collate_fn
+from src.data import AudioProcessor, SpeechDataset, Tokenizer, collate_fn
 
 
 class TestAudioProcessor:
@@ -91,12 +91,16 @@ class TestCollateFn:
                 "labels": torch.tensor([1, 2, 3]),
                 "input_length": 100,
                 "label_length": 3,
+                "text": "a",
+                "id": "utt-1",
             },
             {
                 "features": torch.randn(150, 80),
                 "labels": torch.tensor([4, 5, 6, 7, 8]),
                 "input_length": 150,
                 "label_length": 5,
+                "text": "b",
+                "id": "utt-2",
             },
         ]
         
@@ -108,6 +112,8 @@ class TestCollateFn:
         assert collated["input_lengths"].tolist() == [100, 150]
         assert collated["label_lengths"].tolist() == [3, 5]
         assert collated["mask"].shape == (2, 150)
+        assert collated["texts"] == ["a", "b"]
+        assert collated["ids"] == ["utt-1", "utt-2"]
         
     def test_mask_validity(self):
         """Test mask values."""
@@ -134,6 +140,85 @@ class TestCollateFn:
         
         # Second sample: all positions should be True
         assert collated["mask"][1, :].all()
+
+
+class _FakeAudioProcessor:
+    def __init__(self):
+        self.paths = []
+
+    def process_file(self, path: str) -> torch.Tensor:
+        self.paths.append(path)
+        return torch.ones(4, 80)
+
+
+class _FakeTokenizer:
+    def encode(self, text: str):
+        return [len(text), len(text) + 1]
+
+
+class TestSpeechDataset:
+    def test_manifest_loading_and_filtering(self, tmp_path):
+        manifest_path = tmp_path / "train.json"
+        manifest_entries = [
+            {
+                "id": "utt-valid",
+                "audio_filepath": "audio/valid.flac",
+                "text": "こんにちは",
+                "duration": 1.2,
+            },
+            {
+                "id": "utt-short",
+                "audio_filepath": "audio/short.flac",
+                "text": "短い",
+                "duration": 0.1,
+            },
+            {
+                "id": "utt-empty",
+                "audio_filepath": "audio/empty.flac",
+                "text": "   ",
+                "duration": 1.0,
+            },
+        ]
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            for entry in manifest_entries:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        dataset = SpeechDataset(
+            manifest_path=str(manifest_path),
+            audio_processor=_FakeAudioProcessor(),
+            tokenizer=_FakeTokenizer(),
+            min_duration=0.5,
+            max_duration=2.0,
+        )
+
+        assert len(dataset) == 1
+        sample = dataset[0]
+        assert sample["features"].shape == (4, 80)
+        assert sample["labels"].tolist() == [5, 6]
+        assert sample["text"] == "こんにちは"
+        assert sample["id"] == "utt-valid"
+
+    def test_manifest_path_resolution_and_max_samples(self, tmp_path):
+        audio_processor = _FakeAudioProcessor()
+        manifest_path = tmp_path / "train.json"
+        entries = [
+            {"id": "utt-1", "audio_path": "a.wav", "text": "a", "duration": 1.0},
+            {"id": "utt-2", "audio_filepath": "b.wav", "text": "bb", "duration": 1.0},
+        ]
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            for entry in entries:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        dataset = SpeechDataset(
+            manifest_path=str(manifest_path),
+            audio_processor=audio_processor,
+            tokenizer=_FakeTokenizer(),
+            max_samples=1,
+        )
+
+        assert len(dataset) == 1
+        dataset[0]
+        assert audio_processor.paths[0] == str((tmp_path / "a.wav").resolve())
 
 
 if __name__ == "__main__":
