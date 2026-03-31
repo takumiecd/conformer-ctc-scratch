@@ -101,7 +101,11 @@ class Trainer:
         epoch_loss = 0.0
         num_batches = 0
         
-        pbar = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch}")
+        pbar = tqdm(
+            self.train_loader,
+            desc=f"Epoch {self.current_epoch}",
+            dynamic_ncols=True,
+        )
         
         for batch_idx, batch in enumerate(pbar):
             loss = self._train_step(batch)
@@ -166,7 +170,14 @@ class Trainer:
         all_refs = []
         all_hyps = []
         
-        for batch in tqdm(self.val_loader, desc="Validation"):
+        val_pbar = tqdm(
+            self.val_loader,
+            desc="Validation",
+            leave=False,
+            dynamic_ncols=True,
+        )
+
+        for batch in val_pbar:
             features = batch["features"].to(self.device)
             labels = batch["labels"].to(self.device)
             input_lengths = batch["input_lengths"].to(self.device)
@@ -204,7 +215,8 @@ class Trainer:
         else:
             cer = 0.0
             
-        print(f"\nValidation - Loss: {avg_loss:.4f}, CER: {cer:.2f}%")
+        val_pbar.close()
+        tqdm.write(f"Validation - Loss: {avg_loss:.4f}, CER: {cer:.2f}%")
         self.writer.add_scalar("val/loss", avg_loss, self.global_step)
         self.writer.add_scalar("val/cer", cer, self.global_step)
         
