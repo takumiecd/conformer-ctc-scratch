@@ -79,8 +79,8 @@ class Trainer:
         
     def train(self):
         """Run training loop."""
-        print(f"Training on {self.device}")
-        print(f"Model parameters: {self.model.count_parameters():,}")
+        tqdm.write(f"Training on {self.device}")
+        tqdm.write(f"Model parameters: {self.model.count_parameters():,}")
         
         for epoch in range(self.current_epoch, self.max_epochs):
             self.current_epoch = epoch
@@ -93,7 +93,7 @@ class Trainer:
                 self._save_checkpoint(None)
                 
         self.writer.close()
-        print("Training complete!")
+        tqdm.write("Training complete!")
         
     def _train_epoch(self):
         """Train for one epoch."""
@@ -248,7 +248,7 @@ class Trainer:
             self.best_val_cer = val_cer
             best_path = os.path.join(self.save_dir, "best.pt")
             torch.save(checkpoint, best_path)
-            print(f"New best CER: {val_cer:.2f}%")
+            tqdm.write(f"New best CER: {val_cer:.2f}%")
             
         # Save top-k checkpoints
         if val_cer is not None:
@@ -284,4 +284,4 @@ class Trainer:
         if "val_cer" in checkpoint and checkpoint["val_cer"] is not None:
             self.best_val_cer = checkpoint["val_cer"]
             
-        print(f"Loaded checkpoint from step {self.global_step}")
+        tqdm.write(f"Loaded checkpoint from step {self.global_step}")

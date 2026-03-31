@@ -13,7 +13,7 @@ def extract_texts(
     max_samples: int = None,
 ):
     """Extract transcriptions from ReazonSpeech dataset."""
-    print(f"Loading ReazonSpeech ({subset}) in streaming mode...")
+    tqdm.write(f"Loading ReazonSpeech ({subset}) in streaming mode...")
     dataset = load_dataset(
         "reazon-research/reazonspeech",
         subset,
@@ -21,7 +21,7 @@ def extract_texts(
         streaming=True,
     )
     
-    print(f"Extracting texts to {output_file}...")
+    tqdm.write(f"Extracting texts to {output_file}...")
     count = 0
     errors = 0
     
@@ -43,7 +43,7 @@ def extract_texts(
                 
                 # Progress
                 if i % 1000 == 0:
-                    print(f"Processed: {i}, Extracted: {count}, Errors: {errors}")
+                    tqdm.write(f"Processed: {i}, Extracted: {count}, Errors: {errors}")
                     
             except StopIteration:
                 break
@@ -51,10 +51,10 @@ def extract_texts(
                 # Skip corrupted audio files
                 errors += 1
                 if errors % 100 == 0:
-                    print(f"Warning: Skipped {errors} corrupted files")
+                    tqdm.write(f"Warning: Skipped {errors} corrupted files")
                 continue
                 
-    print(f"\nExtracted {count} transcriptions (skipped {errors} corrupted files)")
+    tqdm.write(f"Extracted {count} transcriptions (skipped {errors} corrupted files)")
 
 
 def train_tokenizer(
@@ -66,7 +66,7 @@ def train_tokenizer(
     """Train SentencePiece tokenizer."""
     import sentencepiece as spm
     
-    print(f"Training {model_type} tokenizer with vocab_size={vocab_size}...")
+    tqdm.write(f"Training {model_type} tokenizer with vocab_size={vocab_size}...")
     
     # Reserve 1 slot for blank token (we'll add it after training)
     actual_vocab_size = vocab_size - 1
@@ -87,7 +87,7 @@ def train_tokenizer(
         num_threads=os.cpu_count(),
     )
     
-    print(f"Tokenizer saved to {model_prefix}.model")
+    tqdm.write(f"Tokenizer saved to {model_prefix}.model")
 
 
 def main():
@@ -147,10 +147,10 @@ def main():
     encoded = sp.Encode(test_text)
     decoded = sp.Decode(encoded)
     
-    print(f"\nTest: '{test_text}'")
-    print(f"Encoded: {encoded}")
-    print(f"Decoded: '{decoded}'")
-    print(f"Vocab size: {sp.GetPieceSize()} (+ 1 blank = {sp.GetPieceSize() + 1})")
+    tqdm.write(f"Test: '{test_text}'")
+    tqdm.write(f"Encoded: {encoded}")
+    tqdm.write(f"Decoded: '{decoded}'")
+    tqdm.write(f"Vocab size: {sp.GetPieceSize()} (+ 1 blank = {sp.GetPieceSize() + 1})")
 
 
 if __name__ == "__main__":

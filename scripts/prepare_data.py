@@ -120,7 +120,7 @@ def prepare_reazon_speech(
     if val_ratio < 0 or test_ratio < 0 or val_ratio + test_ratio >= 1.0:
         raise ValueError("val_ratio and test_ratio must be non-negative and sum to less than 1.0")
 
-    print(f"Loading ReazonSpeech ({subset}) in streaming mode...")
+    tqdm.write(f"Loading ReazonSpeech ({subset}) in streaming mode...")
     dataset = load_dataset(
         "reazon-research/reazonspeech",
         subset,
@@ -147,7 +147,7 @@ def prepare_reazon_speech(
     if resume:
         counts, resume_index = load_resume_state(output_dir, subset)
         file_mode = "a"
-        print(
+        tqdm.write(
             f"Resume mode: starting after source index {resume_index - 1} "
             f"(train={counts['train']}, val={counts['val']}, test={counts['test']})"
         )
@@ -167,9 +167,9 @@ def prepare_reazon_speech(
     source_index = 0
 
     try:
-        print(f"Saving audio files under {audio_root}...")
+        tqdm.write(f"Saving audio files under {audio_root}...")
         iterator = iter(dataset)
-        pbar = tqdm(desc="Preparing", initial=resume_index)
+        pbar = tqdm(desc="Preparing", initial=resume_index, dynamic_ncols=True)
 
         while True:
             if max_samples is not None and saved_samples >= max_samples:
@@ -182,7 +182,9 @@ def prepare_reazon_speech(
             except Exception as e:
                 decode_errors += 1
                 if decode_errors <= 5 or decode_errors % 100 == 0:
-                    print(f"Warning: skipped undecodable sample #{source_index} ({type(e).__name__}: {e})")
+                    tqdm.write(
+                        f"Warning: skipped undecodable sample #{source_index} ({type(e).__name__}: {e})"
+                    )
                 continue
 
             index = source_index
@@ -235,14 +237,14 @@ def prepare_reazon_speech(
                         skipped_samples=skipped_samples,
                         decode_errors=decode_errors,
                     )
-                    print(
+                    tqdm.write(
                         f"Saved {saved_samples} samples "
                         f"(train={counts['train']}, val={counts['val']}, test={counts['test']})"
                     )
             except Exception as e:
                 skipped_samples += 1
                 if skipped_samples <= 5 or skipped_samples % 100 == 0:
-                    print(f"Warning: skipped sample {index} during export ({type(e).__name__}: {e})")
+                    tqdm.write(f"Warning: skipped sample {index} during export ({type(e).__name__}: {e})")
                 continue
 
         pbar.close()
@@ -278,11 +280,11 @@ def prepare_reazon_speech(
     with open(os.path.join(output_dir, "info.json"), "w", encoding="utf-8") as f:
         json.dump(info, f, ensure_ascii=False, indent=2)
 
-    print(f"\nPrepared dataset in {output_dir}")
-    print(f"  Train: {counts['train']} samples -> {manifest_paths['train']}")
-    print(f"  Val:   {counts['val']} samples -> {manifest_paths['val']}")
-    print(f"  Test:  {counts['test']} samples -> {manifest_paths['test']}")
-    print(f"  Skipped: {skipped_samples}")
+    tqdm.write(f"Prepared dataset in {output_dir}")
+    tqdm.write(f"  Train: {counts['train']} samples -> {manifest_paths['train']}")
+    tqdm.write(f"  Val:   {counts['val']} samples -> {manifest_paths['val']}")
+    tqdm.write(f"  Test:  {counts['test']} samples -> {manifest_paths['test']}")
+    tqdm.write(f"  Skipped: {skipped_samples}")
 
 
 def main():
