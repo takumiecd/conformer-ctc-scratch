@@ -3,6 +3,7 @@
 import os
 import time
 from typing import Optional, Dict, Any
+from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -211,13 +212,18 @@ class Trainer:
     
     def _save_checkpoint(self, val_cer: Optional[float]):
         """Save checkpoint."""
+        if OmegaConf.is_config(self.config):
+            config_to_save = OmegaConf.to_container(self.config, resolve=True)
+        else:
+            config_to_save = self.config
+
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "global_step": self.global_step,
             "epoch": self.current_epoch,
-            "config": self.config,
+            "config": config_to_save,
             "val_cer": val_cer,
         }
         
@@ -251,7 +257,11 @@ class Trainer:
                     
     def load_checkpoint(self, checkpoint_path: str):
         """Load checkpoint."""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location=self.device,
+            weights_only=False,
+        )
         
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
