@@ -164,6 +164,13 @@ data/
 | `--max_duration` | 20.0 | 最長音声長 |
 | `--max_samples` | None | 書き出すサンプル上限 |
 | `--audio_format` | flac | 保存形式 (`flac` / `wav`) |
+| `--resume` | False | 既存 manifest に追記して続きから再開 |
+
+途中で FLAC デコードエラーなどが出ても、更新後の `prepare_data.py` は問題サンプルをスキップして継続します。再開時は:
+
+```bash
+python scripts/prepare_data.py --subset small --output_dir data --resume
+```
 
 ---
 

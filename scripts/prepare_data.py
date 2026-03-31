@@ -5,12 +5,24 @@ import argparse
 import hashlib
 import json
 import os
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torchaudio
 from datasets import load_dataset
 from tqdm import tqdm
+
+
+def parse_utterance_index(utterance_id: str, subset: str) -> Optional[int]:
+    """Parse the source example index from a generated utterance ID."""
+    prefix = f"reazonspeech-{subset}-"
+    if not utterance_id.startswith(prefix):
+        return None
+
+    try:
+        return int(utterance_id[len(prefix):])
+    except ValueError:
+        return None
 
 
 def assign_split(utterance_id: str, val_ratio: float, test_ratio: float) -> str:
@@ -37,6 +49,62 @@ def normalize_waveform(audio_array, sampling_rate: int) -> Tuple[torch.Tensor, f
     return waveform, duration
 
 
+def load_resume_state(output_dir: str, subset: str) -> Tuple[Dict[str, int], int]:
+    """Load saved manifest counts and the next source index for resume."""
+    counts = {"train": 0, "val": 0, "test": 0}
+    max_index = -1
+
+    for split in counts:
+        manifest_path = os.path.join(output_dir, f"{split}.json")
+        if not os.path.exists(manifest_path):
+            continue
+
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                counts[split] += 1
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                utterance_id = record.get("id")
+                if not utterance_id:
+                    continue
+
+                utterance_index = parse_utterance_index(str(utterance_id), subset)
+                if utterance_index is not None:
+                    max_index = max(max_index, utterance_index)
+
+    return counts, max_index + 1
+
+
+def save_progress(
+    output_dir: str,
+    subset: str,
+    counts: Dict[str, int],
+    next_index: int,
+    saved_samples: int,
+    skipped_samples: int,
+    decode_errors: int,
+):
+    """Persist progress metadata for long-running exports."""
+    state = {
+        "subset": subset,
+        "next_index": next_index,
+        "saved_samples": saved_samples,
+        "skipped_samples": skipped_samples,
+        "decode_errors": decode_errors,
+        "train_samples": counts["train"],
+        "val_samples": counts["val"],
+        "test_samples": counts["test"],
+    }
+    with open(os.path.join(output_dir, "prepare_state.json"), "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
 def prepare_reazon_speech(
     output_dir: str,
     subset: str = "small",
@@ -46,6 +114,7 @@ def prepare_reazon_speech(
     min_duration: float = 0.5,
     max_samples: int = None,
     audio_format: str = "flac",
+    resume: bool = False,
 ):
     """Prepare ReazonSpeech dataset into local audio files and manifests."""
     if val_ratio < 0 or test_ratio < 0 or val_ratio + test_ratio >= 1.0:
@@ -75,20 +144,53 @@ def prepare_reazon_speech(
     for path in split_audio_dirs.values():
         os.makedirs(path, exist_ok=True)
 
+    if resume:
+        counts, resume_index = load_resume_state(output_dir, subset)
+        file_mode = "a"
+        print(
+            f"Resume mode: starting after source index {resume_index - 1} "
+            f"(train={counts['train']}, val={counts['val']}, test={counts['test']})"
+        )
+    else:
+        counts = {split: 0 for split in manifest_paths}
+        resume_index = 0
+        file_mode = "w"
+
     manifest_files = {
-        split: open(path, "w", encoding="utf-8")
+        split: open(path, file_mode, encoding="utf-8")
         for split, path in manifest_paths.items()
     }
 
-    counts: Dict[str, int] = {split: 0 for split in manifest_paths}
-    saved_samples = 0
+    saved_samples = sum(counts.values())
     skipped_samples = 0
+    decode_errors = 0
+    source_index = 0
 
     try:
         print(f"Saving audio files under {audio_root}...")
-        for index, sample in enumerate(tqdm(dataset, desc="Preparing")):
+        iterator = iter(dataset)
+        pbar = tqdm(desc="Preparing", initial=resume_index)
+
+        while True:
             if max_samples is not None and saved_samples >= max_samples:
                 break
+
+            try:
+                sample = next(iterator)
+            except StopIteration:
+                break
+            except Exception as e:
+                decode_errors += 1
+                if decode_errors <= 5 or decode_errors % 100 == 0:
+                    print(f"Warning: skipped undecodable sample #{source_index} ({type(e).__name__}: {e})")
+                continue
+
+            index = source_index
+            source_index += 1
+            pbar.update(1)
+
+            if index < resume_index:
+                continue
 
             try:
                 text = str(sample["transcription"]).strip()
@@ -124,16 +226,39 @@ def prepare_reazon_speech(
                 saved_samples += 1
 
                 if saved_samples % 1000 == 0:
+                    save_progress(
+                        output_dir=output_dir,
+                        subset=subset,
+                        counts=counts,
+                        next_index=source_index,
+                        saved_samples=saved_samples,
+                        skipped_samples=skipped_samples,
+                        decode_errors=decode_errors,
+                    )
                     print(
                         f"Saved {saved_samples} samples "
                         f"(train={counts['train']}, val={counts['val']}, test={counts['test']})"
                     )
-            except Exception:
+            except Exception as e:
                 skipped_samples += 1
+                if skipped_samples <= 5 or skipped_samples % 100 == 0:
+                    print(f"Warning: skipped sample {index} during export ({type(e).__name__}: {e})")
                 continue
+
+        pbar.close()
     finally:
         for file in manifest_files.values():
             file.close()
+
+    save_progress(
+        output_dir=output_dir,
+        subset=subset,
+        counts=counts,
+        next_index=source_index,
+        saved_samples=saved_samples,
+        skipped_samples=skipped_samples,
+        decode_errors=decode_errors,
+    )
 
     info = {
         "subset": subset,
@@ -141,6 +266,7 @@ def prepare_reazon_speech(
         "audio_format": audio_format,
         "saved_samples": saved_samples,
         "skipped_samples": skipped_samples,
+        "decode_errors": decode_errors,
         "train_samples": counts["train"],
         "val_samples": counts["val"],
         "test_samples": counts["test"],
@@ -195,6 +321,10 @@ def main():
         choices=["flac", "wav"],
         help="Audio format to store locally"
     )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Append to existing manifests and continue after the last saved utterance ID"
+    )
     args = parser.parse_args()
 
     prepare_reazon_speech(
@@ -206,6 +336,7 @@ def main():
         min_duration=args.min_duration,
         max_samples=args.max_samples,
         audio_format=args.audio_format,
+        resume=args.resume,
     )
 
 
