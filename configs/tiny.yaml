@@ -36,6 +36,6 @@ data:
   min_duration: 0.5
 
 checkpoint:
-  save_dir: "checkpoints"
+  save_dir: "checkpoints/tiny"
   save_top_k: 3
   monitor: "val_wer"

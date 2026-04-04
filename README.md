@@ -207,23 +207,28 @@ python scripts/train.py --config configs/medium.yaml
 ### 学習の再開
 
 ```bash
-python scripts/train.py --config configs/tiny.yaml --resume checkpoints/latest.pt
+python scripts/train.py --config configs/tiny.yaml --resume checkpoints/tiny/latest.pt
 ```
 
 ### 出力
 
 ```
 checkpoints/
-├── latest.pt                        # 最新チェックポイント
-├── best.pt                          # ベストCER
-├── checkpoint_step1000_cer15.23.pt  # Top-k チェックポイント
-└── logs/                            # TensorBoardログ
+├── tiny/
+│   ├── latest.pt
+│   ├── best.pt
+│   ├── checkpoint_step1000_cer15.23.pt
+│   └── logs/
+├── small/
+│   └── ...
+└── medium/
+    └── ...
 ```
 
 ### TensorBoardで学習監視
 
 ```bash
-tensorboard --logdir checkpoints/logs
+tensorboard --logdir checkpoints
 ```
 
 ---
@@ -234,7 +239,7 @@ tensorboard --logdir checkpoints/logs
 
 ```bash
 python scripts/inference.py \
-    --checkpoint checkpoints/best.pt \
+    --checkpoint checkpoints/tiny/best.pt \
     --audio path/to/audio.wav \
     --config configs/tiny.yaml
 ```
@@ -243,7 +248,7 @@ python scripts/inference.py \
 
 ```bash
 python scripts/inference.py \
-    --checkpoint checkpoints/best.pt \
+    --checkpoint checkpoints/tiny/best.pt \
     --audio path/to/audio.wav \
     --beam_search \
     --beam_width 10
@@ -262,7 +267,7 @@ config = load_config("configs/tiny.yaml")
 tokenizer = Tokenizer("tokenizer/tokenizer.model")
 model = ConformerCTC.from_config(config, vocab_size=tokenizer.get_vocab_size())
 
-checkpoint = torch.load("checkpoints/best.pt", map_location="cpu")
+checkpoint = torch.load("checkpoints/tiny/best.pt", map_location="cpu")
 model.load_state_dict(checkpoint["model_state_dict"])
 model.eval()
 
