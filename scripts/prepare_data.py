@@ -121,6 +121,24 @@ def load_next_index_state(output_dir: str, subset: str) -> Optional[int]:
     return int(next_index)
 
 
+def load_exhausted_state(output_dir: str, subset: str) -> bool:
+    """Return whether the previous run already consumed the full source stream."""
+    progress_path = os.path.join(output_dir, "prepare_state.json")
+    if not os.path.exists(progress_path):
+        return False
+
+    try:
+        with open(progress_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    if state.get("subset") != subset:
+        return False
+
+    return bool(state.get("exhausted", False))
+
+
 def save_progress(
     output_dir: str,
     subset: str,
@@ -129,6 +147,7 @@ def save_progress(
     saved_samples: int,
     skipped_samples: int,
     decode_errors: int,
+    exhausted: bool,
 ):
     """Persist progress metadata for long-running exports."""
     state = {
@@ -137,6 +156,7 @@ def save_progress(
         "saved_samples": saved_samples,
         "skipped_samples": skipped_samples,
         "decode_errors": decode_errors,
+        "exhausted": exhausted,
         "train_samples": counts["train"],
         "val_samples": counts["val"],
         "test_samples": counts["test"],
@@ -188,6 +208,7 @@ def prepare_reazon_speech(
         counts, manifest_resume_index = load_resume_state(output_dir, subset)
         progress_resume_index = load_next_index_state(output_dir, subset)
         skipped_samples, decode_errors = load_progress_state(output_dir, subset)
+        exhausted = load_exhausted_state(output_dir, subset)
         resume_index = max(
             manifest_resume_index,
             progress_resume_index if progress_resume_index is not None else 0,
@@ -198,11 +219,15 @@ def prepare_reazon_speech(
             f"(train={counts['train']}, val={counts['val']}, test={counts['test']}, "
             f"skipped={skipped_samples}, decode_errors={decode_errors})"
         )
+        if exhausted:
+            tqdm.write("Source stream was already exhausted on the previous run. Nothing to resume.")
+            return
     else:
         counts = {split: 0 for split in manifest_paths}
         resume_index = 0
         skipped_samples = 0
         decode_errors = 0
+        exhausted = False
         file_mode = "w"
 
     manifest_files = {
@@ -216,7 +241,7 @@ def prepare_reazon_speech(
     try:
         tqdm.write(f"Saving audio files under {audio_root}...")
         iterator = iter(dataset)
-        pbar = tqdm(desc="Preparing", initial=resume_index, dynamic_ncols=True)
+        pbar = tqdm(desc="Preparing", dynamic_ncols=True)
 
         while True:
             if max_samples is not None and saved_samples >= max_samples:
@@ -225,6 +250,7 @@ def prepare_reazon_speech(
             try:
                 sample = next(iterator)
             except StopIteration:
+                exhausted = True
                 break
             except Exception as e:
                 index = source_index
@@ -288,6 +314,7 @@ def prepare_reazon_speech(
                         saved_samples=saved_samples,
                         skipped_samples=skipped_samples,
                         decode_errors=decode_errors,
+                        exhausted=False,
                     )
                     tqdm.write(
                         f"Saved {saved_samples} samples "
@@ -312,6 +339,7 @@ def prepare_reazon_speech(
         saved_samples=saved_samples,
         skipped_samples=skipped_samples,
         decode_errors=decode_errors,
+        exhausted=exhausted,
     )
 
     info = {
@@ -321,6 +349,7 @@ def prepare_reazon_speech(
         "saved_samples": saved_samples,
         "skipped_samples": skipped_samples,
         "decode_errors": decode_errors,
+        "exhausted": exhausted,
         "train_samples": counts["train"],
         "val_samples": counts["val"],
         "test_samples": counts["test"],

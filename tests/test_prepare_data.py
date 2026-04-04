@@ -81,6 +81,7 @@ class TestPrepareData:
                     "saved_samples": 1,
                     "skipped_samples": 0,
                     "decode_errors": 0,
+                    "exhausted": False,
                     "train_samples": 1,
                     "val_samples": 0,
                     "test_samples": 0,
@@ -119,6 +120,7 @@ class TestPrepareData:
         ]
         assert state["next_index"] == 3
         assert state["decode_errors"] == 1
+        assert state["exhausted"] is True
         assert len(saved_audio_paths) == 1
 
     def test_resume_loads_previous_skip_and_decode_counts(self, tmp_path):
@@ -134,6 +136,7 @@ class TestPrepareData:
                     "saved_samples": 8,
                     "skipped_samples": 2,
                     "decode_errors": 3,
+                    "exhausted": False,
                     "train_samples": 8,
                     "val_samples": 0,
                     "test_samples": 0,
@@ -181,6 +184,7 @@ class TestPrepareData:
                     "saved_samples": 1,
                     "skipped_samples": 0,
                     "decode_errors": 1,
+                    "exhausted": True,
                     "train_samples": 1,
                     "val_samples": 0,
                     "test_samples": 0,
@@ -211,6 +215,59 @@ class TestPrepareData:
 
         assert state["next_index"] == 3
         assert state["decode_errors"] == 1
+
+    def test_resume_returns_immediately_after_stream_is_exhausted(self, tmp_path, monkeypatch):
+        prepare_data = _load_prepare_data_module()
+
+        output_dir = tmp_path / "data_medium"
+        output_dir.mkdir()
+        with open(output_dir / "train.json", "w", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "id": "reazonspeech-medium-000000000",
+                        "audio_filepath": "/tmp/audio0.flac",
+                        "text": "first sample",
+                        "duration": 1.0,
+                        "sample_rate": 16000,
+                        "source": "reazon-research/reazonspeech",
+                        "subset": "medium",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        with open(output_dir / "prepare_state.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "subset": "medium",
+                    "next_index": 10,
+                    "saved_samples": 1,
+                    "skipped_samples": 0,
+                    "decode_errors": 2,
+                    "exhausted": True,
+                    "train_samples": 1,
+                    "val_samples": 0,
+                    "test_samples": 0,
+                },
+                f,
+                ensure_ascii=False,
+            )
+
+        load_dataset_calls = []
+        monkeypatch.setattr(
+            prepare_data,
+            "load_dataset",
+            lambda *args, **kwargs: load_dataset_calls.append((args, kwargs)),
+        )
+
+        prepare_data.prepare_reazon_speech(
+            output_dir=str(output_dir),
+            subset="medium",
+            resume=True,
+        )
+
+        assert load_dataset_calls == []
 
 
 if __name__ == "__main__":
