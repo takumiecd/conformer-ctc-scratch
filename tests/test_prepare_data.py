@@ -150,6 +150,68 @@ class TestPrepareData:
         assert skipped_samples == 2
         assert decode_errors == 3
 
+    def test_resume_uses_progress_next_index_and_does_not_recount_old_decode_errors(
+        self, tmp_path, monkeypatch
+    ):
+        prepare_data = _load_prepare_data_module()
+
+        output_dir = tmp_path / "data_medium"
+        output_dir.mkdir()
+        with open(output_dir / "train.json", "w", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "id": "reazonspeech-medium-000000000",
+                        "audio_filepath": "/tmp/audio0.flac",
+                        "text": "first sample",
+                        "duration": 1.0,
+                        "sample_rate": 16000,
+                        "source": "reazon-research/reazonspeech",
+                        "subset": "medium",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        with open(output_dir / "prepare_state.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "subset": "medium",
+                    "next_index": 3,
+                    "saved_samples": 1,
+                    "skipped_samples": 0,
+                    "decode_errors": 1,
+                    "train_samples": 1,
+                    "val_samples": 0,
+                    "test_samples": 0,
+                },
+                f,
+                ensure_ascii=False,
+            )
+
+        monkeypatch.setattr(
+            prepare_data,
+            "load_dataset",
+            lambda *args, **kwargs: _FakeStreamingDataset(),
+        )
+        monkeypatch.setattr(
+            prepare_data.torchaudio,
+            "save",
+            lambda path, waveform, sample_rate: None,
+        )
+
+        prepare_data.prepare_reazon_speech(
+            output_dir=str(output_dir),
+            subset="medium",
+            resume=True,
+        )
+
+        with open(output_dir / "prepare_state.json", "r", encoding="utf-8") as f:
+            state = json.load(f)
+
+        assert state["next_index"] == 3
+        assert state["decode_errors"] == 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

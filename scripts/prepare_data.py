@@ -99,6 +99,28 @@ def load_progress_state(output_dir: str, subset: str) -> Tuple[int, int]:
     return int(state.get("skipped_samples", 0)), int(state.get("decode_errors", 0))
 
 
+def load_next_index_state(output_dir: str, subset: str) -> Optional[int]:
+    """Load the next source index from the last progress file."""
+    progress_path = os.path.join(output_dir, "prepare_state.json")
+    if not os.path.exists(progress_path):
+        return None
+
+    try:
+        with open(progress_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if state.get("subset") != subset:
+        return None
+
+    next_index = state.get("next_index")
+    if next_index is None:
+        return None
+
+    return int(next_index)
+
+
 def save_progress(
     output_dir: str,
     subset: str,
@@ -163,8 +185,13 @@ def prepare_reazon_speech(
         os.makedirs(path, exist_ok=True)
 
     if resume:
-        counts, resume_index = load_resume_state(output_dir, subset)
+        counts, manifest_resume_index = load_resume_state(output_dir, subset)
+        progress_resume_index = load_next_index_state(output_dir, subset)
         skipped_samples, decode_errors = load_progress_state(output_dir, subset)
+        resume_index = max(
+            manifest_resume_index,
+            progress_resume_index if progress_resume_index is not None else 0,
+        )
         file_mode = "a"
         tqdm.write(
             f"Resume mode: starting after source index {resume_index - 1} "
@@ -203,6 +230,8 @@ def prepare_reazon_speech(
                 index = source_index
                 source_index += 1
                 pbar.update(1)
+                if index < resume_index:
+                    continue
                 decode_errors += 1
                 if decode_errors <= 5 or decode_errors % 100 == 0:
                     tqdm.write(
