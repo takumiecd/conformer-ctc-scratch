@@ -109,6 +109,7 @@ class Trainer:
         
         for batch_idx, batch in enumerate(pbar):
             loss = self._train_step(batch)
+            did_optimizer_step = False
             
             # Gradient accumulation
             loss = loss / self.accumulate_grad_batches
@@ -126,12 +127,13 @@ class Trainer:
                 self.scheduler.step()
                 self.optimizer.zero_grad()
                 self.global_step += 1
+                did_optimizer_step = True
                 
             epoch_loss += loss.item() * self.accumulate_grad_batches
             num_batches += 1
             
             # Logging
-            if self.global_step % self.log_interval == 0:
+            if did_optimizer_step and self.global_step % self.log_interval == 0:
                 avg_loss = epoch_loss / num_batches
                 lr = self.scheduler.get_last_lr()[0]
                 pbar.set_postfix(loss=f"{avg_loss:.4f}", lr=f"{lr:.2e}")
@@ -140,7 +142,8 @@ class Trainer:
                 
             # Mid-epoch validation
             if (
-                self.val_loader
+                did_optimizer_step
+                and self.val_loader
                 and self.global_step > 0
                 and self.global_step % self.eval_interval == 0
             ):

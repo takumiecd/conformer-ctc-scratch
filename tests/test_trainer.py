@@ -70,10 +70,10 @@ class TestTrainer:
         assert trainer.global_step == 0
         assert validate_calls == []
 
-    def test_mid_epoch_validation_runs_after_first_optimizer_step(self, tmp_path):
+    def test_mid_epoch_validation_runs_once_per_optimizer_step(self, tmp_path):
         trainer = Trainer(
             model=_DummyModel(),
-            train_loader=[_make_batch(), _make_batch()],
+            train_loader=[_make_batch(), _make_batch(), _make_batch()],
             val_loader=[_make_batch()],
             config={
                 "training": {
