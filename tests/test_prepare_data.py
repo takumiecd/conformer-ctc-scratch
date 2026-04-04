@@ -51,6 +51,28 @@ class _FakeStreamingIterator:
         raise StopIteration
 
 
+class _FakeConnectionInterruptedIterator:
+    def __init__(self):
+        self.index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index == 0:
+            self.index += 1
+            return {
+                "transcription": "first sample",
+                "audio": {"array": [0.0] * 16000, "sampling_rate": 16000},
+            }
+        raise ConnectionError("Server Disconnected")
+
+
+class _FakeConnectionInterruptedDataset:
+    def __iter__(self):
+        return _FakeConnectionInterruptedIterator()
+
+
 class TestPrepareData:
     def test_resume_keeps_source_index_aligned_after_decode_error(self, tmp_path, monkeypatch):
         prepare_data = _load_prepare_data_module()
@@ -268,6 +290,41 @@ class TestPrepareData:
         )
 
         assert load_dataset_calls == []
+
+    def test_remote_stream_error_saves_progress_without_marking_exhausted(
+        self, tmp_path, monkeypatch
+    ):
+        prepare_data = _load_prepare_data_module()
+
+        output_dir = tmp_path / "data_medium"
+        output_dir.mkdir()
+
+        monkeypatch.setattr(
+            prepare_data,
+            "load_dataset",
+            lambda *args, **kwargs: _FakeConnectionInterruptedDataset(),
+        )
+        monkeypatch.setattr(
+            prepare_data.torchaudio,
+            "save",
+            lambda path, waveform, sample_rate: None,
+        )
+
+        prepare_data.prepare_reazon_speech(
+            output_dir=str(output_dir),
+            subset="medium",
+            resume=False,
+        )
+
+        with open(output_dir / "prepare_state.json", "r", encoding="utf-8") as f:
+            state = json.load(f)
+        with open(output_dir / "train.json", "r", encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+
+        assert state["next_index"] == 1
+        assert state["decode_errors"] == 0
+        assert state["exhausted"] is False
+        assert [record["id"] for record in records] == ["reazonspeech-medium-000000000"]
 
 
 if __name__ == "__main__":

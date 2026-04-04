@@ -49,6 +49,19 @@ def normalize_waveform(audio_array, sampling_rate: int) -> Tuple[torch.Tensor, f
     return waveform, duration
 
 
+def is_remote_stream_error(error: Exception) -> bool:
+    """Return whether an iterator error likely came from the remote stream."""
+    message = str(error).lower()
+    error_name = type(error).__name__.lower()
+    return (
+        "connectionerror" in error_name
+        or "server disconnected" in message
+        or "disconnected from remote data host" in message
+        or "remoteprotocolerror" in error_name
+        or "readtimeout" in error_name
+    )
+
+
 def load_resume_state(output_dir: str, subset: str) -> Tuple[Dict[str, int], int]:
     """Load saved manifest counts and the next source index for resume."""
     counts = {"train": 0, "val": 0, "test": 0}
@@ -180,14 +193,6 @@ def prepare_reazon_speech(
     if val_ratio < 0 or test_ratio < 0 or val_ratio + test_ratio >= 1.0:
         raise ValueError("val_ratio and test_ratio must be non-negative and sum to less than 1.0")
 
-    tqdm.write(f"Loading ReazonSpeech ({subset}) in streaming mode...")
-    dataset = load_dataset(
-        "reazon-research/reazonspeech",
-        subset,
-        split="train",
-        streaming=True,
-    )
-
     output_dir = os.path.abspath(output_dir)
     audio_root = os.path.join(output_dir, "audio")
     os.makedirs(audio_root, exist_ok=True)
@@ -230,6 +235,14 @@ def prepare_reazon_speech(
         exhausted = False
         file_mode = "w"
 
+    tqdm.write(f"Loading ReazonSpeech ({subset}) in streaming mode...")
+    dataset = load_dataset(
+        "reazon-research/reazonspeech",
+        subset,
+        split="train",
+        streaming=True,
+    )
+
     manifest_files = {
         split: open(path, file_mode, encoding="utf-8")
         for split, path in manifest_paths.items()
@@ -253,6 +266,23 @@ def prepare_reazon_speech(
                 exhausted = True
                 break
             except Exception as e:
+                if is_remote_stream_error(e):
+                    tqdm.write(
+                        f"Warning: remote stream interrupted at source index {source_index} "
+                        f"({type(e).__name__}: {e})"
+                    )
+                    save_progress(
+                        output_dir=output_dir,
+                        subset=subset,
+                        counts=counts,
+                        next_index=source_index,
+                        saved_samples=saved_samples,
+                        skipped_samples=skipped_samples,
+                        decode_errors=decode_errors,
+                        exhausted=False,
+                    )
+                    tqdm.write("Progress was saved. Re-run with --resume to continue.")
+                    break
                 index = source_index
                 source_index += 1
                 pbar.update(1)
