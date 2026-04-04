@@ -139,7 +139,11 @@ class Trainer:
                 self.writer.add_scalar("train/lr", lr, self.global_step)
                 
             # Mid-epoch validation
-            if self.val_loader and self.global_step % self.eval_interval == 0:
+            if (
+                self.val_loader
+                and self.global_step > 0
+                and self.global_step % self.eval_interval == 0
+            ):
                 val_cer = self._validate()
                 self._save_checkpoint(val_cer)
                 self.model.train()
