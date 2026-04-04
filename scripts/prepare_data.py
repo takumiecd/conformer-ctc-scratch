@@ -81,6 +81,24 @@ def load_resume_state(output_dir: str, subset: str) -> Tuple[Dict[str, int], int
     return counts, max_index + 1
 
 
+def load_progress_state(output_dir: str, subset: str) -> Tuple[int, int]:
+    """Load cumulative skipped/decode counters from the last progress file."""
+    progress_path = os.path.join(output_dir, "prepare_state.json")
+    if not os.path.exists(progress_path):
+        return 0, 0
+
+    try:
+        with open(progress_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return 0, 0
+
+    if state.get("subset") != subset:
+        return 0, 0
+
+    return int(state.get("skipped_samples", 0)), int(state.get("decode_errors", 0))
+
+
 def save_progress(
     output_dir: str,
     subset: str,
@@ -146,14 +164,18 @@ def prepare_reazon_speech(
 
     if resume:
         counts, resume_index = load_resume_state(output_dir, subset)
+        skipped_samples, decode_errors = load_progress_state(output_dir, subset)
         file_mode = "a"
         tqdm.write(
             f"Resume mode: starting after source index {resume_index - 1} "
-            f"(train={counts['train']}, val={counts['val']}, test={counts['test']})"
+            f"(train={counts['train']}, val={counts['val']}, test={counts['test']}, "
+            f"skipped={skipped_samples}, decode_errors={decode_errors})"
         )
     else:
         counts = {split: 0 for split in manifest_paths}
         resume_index = 0
+        skipped_samples = 0
+        decode_errors = 0
         file_mode = "w"
 
     manifest_files = {
@@ -162,8 +184,6 @@ def prepare_reazon_speech(
     }
 
     saved_samples = sum(counts.values())
-    skipped_samples = 0
-    decode_errors = 0
     source_index = 0
 
     try:
@@ -180,10 +200,13 @@ def prepare_reazon_speech(
             except StopIteration:
                 break
             except Exception as e:
+                index = source_index
+                source_index += 1
+                pbar.update(1)
                 decode_errors += 1
                 if decode_errors <= 5 or decode_errors % 100 == 0:
                     tqdm.write(
-                        f"Warning: skipped undecodable sample #{source_index} ({type(e).__name__}: {e})"
+                        f"Warning: skipped undecodable sample #{index} ({type(e).__name__}: {e})"
                     )
                 continue
 
@@ -285,6 +308,7 @@ def prepare_reazon_speech(
     tqdm.write(f"  Val:   {counts['val']} samples -> {manifest_paths['val']}")
     tqdm.write(f"  Test:  {counts['test']} samples -> {manifest_paths['test']}")
     tqdm.write(f"  Skipped: {skipped_samples}")
+    tqdm.write(f"  Decode errors: {decode_errors}")
 
 
 def main():
