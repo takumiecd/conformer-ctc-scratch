@@ -189,6 +189,9 @@ python scripts/train.py --config configs/small.yaml
 
 # Mediumモデル（性能重視）
 python scripts/train.py --config configs/medium.yaml
+
+# 出力先を上書き
+python scripts/train.py --config configs/medium.yaml --output_dir runs/exp-medium-01
 ```
 
 ### オプション
@@ -198,6 +201,7 @@ python scripts/train.py --config configs/medium.yaml
 | `--config` | 必須 | 設定ファイルパス |
 | `--tokenizer` | tokenizer/tokenizer.model | トークナイザーパス |
 | `--resume` | None | チェックポイントから再開 |
+| `--output_dir` | config依存 | checkpoint と TensorBoard log の出力先を上書き |
 | `--train_manifest` | config依存 | train manifest を上書き |
 | `--val_manifest` | config依存 | val manifest を上書き |
 | `--num_workers` | 0 | DataLoaderワーカー数 |

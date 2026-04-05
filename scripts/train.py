@@ -31,6 +31,10 @@ def main():
         help="Path to checkpoint to resume from"
     )
     parser.add_argument(
+        "--output_dir", type=str, default=None,
+        help="Directory to save checkpoints and TensorBoard logs (overrides config.checkpoint.save_dir)"
+    )
+    parser.add_argument(
         "--train_manifest", type=str, default=None,
         help="Path to train manifest (overrides config.data.train_manifest)"
     )
@@ -55,10 +59,15 @@ def main():
     # Load config
     config = load_config(args.config)
     print(f"Config: {args.config}")
+    if args.output_dir:
+        if "checkpoint" not in config or config.checkpoint is None:
+            config.checkpoint = {}
+        config.checkpoint.save_dir = os.path.abspath(args.output_dir)
     
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    print(f"Checkpoint dir: {config.checkpoint.save_dir}")
     
     # Tokenizer
     print(f"Loading tokenizer from {args.tokenizer}...")
